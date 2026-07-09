@@ -85,3 +85,27 @@ test_that("wf_variance validates its inputs", {
   expect_error(wf_variance(rep_w, wmean_y, d, level = 1.5),
                class = "wf_error_input")
 })
+
+test_that("wf_replicates + wf_variance run through a real raking refit", {
+  fixture <- make_weightflow_fixture()
+  d <- fixture$sample
+  d$y <- as.numeric(d$age == "young")
+
+  refit <- function(data, weights) {
+    data$.bw <- weights
+    wf_rake(data, fixture$target, id = "id", init_weight = ".bw",
+            precheck = FALSE)
+  }
+
+  # Delete-one jackknife on this small fixture: every marginal category keeps
+  # >= 3 units per replicate, so each re-raking stays feasible. (A bootstrap on
+  # a fixture this sparse can empty a calibration cell and is infeasible by
+  # design.)
+  rep_w <- wf_replicates(d, refit, method = "jackknife", id = "id")
+  out <- wf_variance(rep_w, function(w, data) sum(w * data$y) / sum(w), d)
+
+  expect_s3_class(out, "wf_variance_result")
+  expect_true(is.finite(out$table$se))
+  expect_true(out$table$se >= 0)
+  expect_true(out$table$ci_lower <= out$table$estimate)
+})
