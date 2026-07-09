@@ -246,6 +246,76 @@
   out
 }
 
+#' Summarize one source by group for group-level lambda.
+#'
+#' @param source Source `wf_weights`.
+#' @param label Source label.
+#' @param outcome Optional outcome column.
+#' @keywords internal
+#' @noRd
+.wf_blend_source_groups <- function(source, label, outcome) {
+  data <- source$data
+  split_rows <- split(seq_len(nrow(data)), .chr(data$group))
+  rows <- lapply(names(split_rows), function(group_name) {
+    idx <- split_rows[[group_name]]
+    part <- data[idx, , drop = FALSE]
+    w_all <- as.numeric(part$weight)
+
+    if (is.null(outcome)) {
+      estimate <- NA_real_
+      variance <- NA_real_
+      missing_outcome <- NA_integer_
+      contributing <- w_all > 0
+      w <- w_all[contributing]
+    } else {
+      y_all <- part[[outcome]]
+      contributing <- w_all > 0 & !is.na(y_all)
+      w <- w_all[contributing]
+      y <- y_all[contributing]
+      missing_outcome <- sum(is.na(y_all))
+      if (length(w) > 0 && sum(w) > 0) {
+        estimate <- sum(w * y) / sum(w)
+        variance <- sum((w^2) * ((y - estimate)^2)) / (sum(w)^2)
+      } else {
+        estimate <- NA_real_
+        variance <- NA_real_
+      }
+    }
+
+    weight_sum <- sum(w)
+    neff <- if (length(w) > 0 && sum(w^2) > 0) {
+      (sum(w)^2) / sum(w^2)
+    } else {
+      0
+    }
+
+    data.frame(
+      group = group_name,
+      row_count = length(idx),
+      weight_sum = weight_sum,
+      neff = neff,
+      estimate = estimate,
+      variance = variance,
+      missing_outcome = missing_outcome,
+      estimable = if (is.null(outcome)) weight_sum > 0 else is.finite(estimate),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  stat_cols <- c(
+    "row_count", "weight_sum", "neff", "estimate",
+    "variance", "missing_outcome", "estimable"
+  )
+  names(out)[names(out) %in% stat_cols] <- paste0(
+    names(out)[names(out) %in% stat_cols],
+    "_",
+    label
+  )
+  out
+}
+
 #' Merge online and offline cell summaries.
 #'
 #' @param online_cells Online cell summary.
@@ -285,6 +355,23 @@
 .wf_blend_lambda_neff <- function(cells) {
   denom <- cells$neff_online + cells$neff_offline
   ifelse(denom > 0, cells$neff_online / denom, NA_real_)
+}
+
+#' Compute inverse-variance lambda.
+#'
+#' @param cells Merged source cells or groups.
+#' @keywords internal
+#' @noRd
+.wf_blend_lambda_inverse_variance <- function(cells) {
+  vo <- cells$variance_online
+  vf <- cells$variance_offline
+  denom <- vo + vf
+  lambda <- ifelse(is.finite(denom) & denom > 0, vf / denom, NA_real_)
+  zero_zero <- is.finite(vo) & is.finite(vf) & vo == 0 & vf == 0
+  if (any(zero_zero)) {
+    lambda[zero_zero] <- .wf_blend_lambda_neff(cells[zero_zero, , drop = FALSE])
+  }
+  lambda
 }
 
 #' Apply lambda trimming and one-source overrides.
@@ -353,6 +440,125 @@
   rep(as.numeric(lambda_fixed), n)
 }
 
+#' Resolve fixed lambda values for cells.
+#'
+#' @param lambda_fixed Scalar or data frame.
+#' @param cells Merged source cells.
+#' @param level Lambda level.
+#' @param by_cell Cell columns.
+#' @keywords internal
+#' @noRd
+.wf_blend_fixed_lambda <- function(lambda_fixed, cells, level, by_cell) {
+  if (is.numeric(lambda_fixed) && length(lambda_fixed) == 1) {
+    return(.wf_blend_fixed_scalar(lambda_fixed, nrow(cells)))
+  }
+  if (!is.data.frame(lambda_fixed)) {
+    wf_abort("`lambda_fixed` must be a scalar or data frame.", "wf_error_input")
+  }
+
+  keys <- if (level == "group") "group" else c("group", by_cell)
+  .require_cols(lambda_fixed, c(keys, "lambda"), "`lambda_fixed`")
+  if (!is.numeric(lambda_fixed$lambda) || any(is.na(lambda_fixed$lambda)) ||
+    any(!is.finite(lambda_fixed$lambda)) || any(lambda_fixed$lambda < 0) ||
+    any(lambda_fixed$lambda > 1)) {
+    wf_abort("`lambda_fixed$lambda` must contain finite values inside [0, 1].", "wf_error_input")
+  }
+
+  lambda_key <- .wf_cell_key(as.matrix(lambda_fixed[, keys, drop = FALSE]), keys)
+  if (anyDuplicated(lambda_key)) {
+    wf_abort("`lambda_fixed` contains duplicate keys.", "wf_error_input")
+  }
+
+  cell_key <- .wf_cell_key(as.matrix(cells[, keys, drop = FALSE]), keys)
+  idx <- match(cell_key, lambda_key)
+  if (any(is.na(idx))) {
+    wf_abort(
+      "`lambda_fixed` does not provide lambda values for every requested output cell.",
+      "wf_error_input"
+    )
+  }
+  lambda_fixed$lambda[idx]
+}
+
+#' Merge source group summaries.
+#'
+#' @param online_groups Online group summary.
+#' @param offline_groups Offline group summary.
+#' @keywords internal
+#' @noRd
+.wf_blend_merge_groups <- function(online_groups, offline_groups) {
+  merged <- merge(
+    online_groups,
+    offline_groups,
+    by = "group",
+    all = TRUE,
+    sort = FALSE
+  )
+  numeric_zero <- c(
+    "row_count_online", "weight_sum_online", "neff_online",
+    "missing_outcome_online", "row_count_offline",
+    "weight_sum_offline", "neff_offline", "missing_outcome_offline"
+  )
+  for (col in intersect(numeric_zero, names(merged))) {
+    merged[[col]][is.na(merged[[col]])] <- 0
+  }
+  logical_false <- c("estimable_online", "estimable_offline")
+  for (col in intersect(logical_false, names(merged))) {
+    merged[[col]][is.na(merged[[col]])] <- FALSE
+  }
+  merged
+}
+
+#' Build lambda at the requested level and merge it to cells.
+#'
+#' @param online Online source.
+#' @param offline Offline source.
+#' @param cells Cell-level source summary.
+#' @param by_cell Cell columns.
+#' @param outcome Optional outcome.
+#' @param lambda Strategy.
+#' @param lambda_fixed Fixed lambda.
+#' @param level Lambda level.
+#' @param trim_lambda Trim bounds.
+#' @keywords internal
+#' @noRd
+.wf_blend_lambda_for_level <- function(online, offline, cells, by_cell, outcome,
+                                       lambda, lambda_fixed, level, trim_lambda) {
+  keys <- c("group", by_cell)
+  if (level == "group" && lambda != "fixed") {
+    online_groups <- .wf_blend_source_groups(online, "online", outcome)
+    offline_groups <- .wf_blend_source_groups(offline, "offline", outcome)
+    base <- .wf_blend_merge_groups(online_groups, offline_groups)
+    lambda_raw <- switch(
+      lambda,
+      neff = .wf_blend_lambda_neff(base),
+      inverse_variance = .wf_blend_lambda_inverse_variance(base)
+    )
+    lambda_info <- .wf_blend_finalize_lambda(base, lambda_raw, lambda, trim_lambda)
+    lambda_table <- cbind(base["group"], lambda_info)
+    idx <- match(cells$group, lambda_table$group)
+    out <- cbind(cells[keys], lambda_table[idx, c("lambda", "lambda_reason", "lambda_trimmed")])
+  } else {
+    lambda_raw <- switch(
+      lambda,
+      neff = .wf_blend_lambda_neff(cells),
+      inverse_variance = .wf_blend_lambda_inverse_variance(cells),
+      fixed = .wf_blend_fixed_lambda(lambda_fixed, cells, level, by_cell)
+    )
+    lambda_info <- .wf_blend_finalize_lambda(cells, lambda_raw, lambda, trim_lambda)
+    out <- cbind(cells[keys], lambda_info)
+  }
+
+  if (any(out$lambda_trimmed)) {
+    wf_warn(
+      sprintf("Trimmed %d data-driven lambda value(s).", sum(out$lambda_trimmed)),
+      "wf_warning_quality",
+      list(n = sum(out$lambda_trimmed))
+    )
+  }
+  out
+}
+
 #' Blend online and offline calibrated estimates
 #'
 #' Combines two `wf_weights` sources at the estimator level. Each source is
@@ -396,13 +602,20 @@ wf_blend <- function(online, offline, by_cell,
   offline_cells <- .wf_blend_source_cells(offline, "offline", by_cell, outcome)
   cells <- .wf_blend_merge_cells(online_cells, offline_cells, by_cell)
 
-  if (lambda == "fixed") {
-    lambda_raw <- .wf_blend_fixed_scalar(lambda_fixed, nrow(cells))
-  } else {
-    lambda_raw <- .wf_blend_lambda_neff(cells)
-  }
-  lambda_info <- .wf_blend_finalize_lambda(cells, lambda_raw, lambda, trim_lambda)
-  cells <- cbind(cells, lambda_info)
+  lambda_table <- .wf_blend_lambda_for_level(
+    online,
+    offline,
+    cells,
+    by_cell,
+    outcome,
+    lambda,
+    lambda_fixed,
+    level,
+    trim_lambda
+  )
+  cell_keys <- .wf_cell_key(as.matrix(cells[, c("group", by_cell), drop = FALSE]), c("group", by_cell))
+  lambda_keys <- .wf_cell_key(as.matrix(lambda_table[, c("group", by_cell), drop = FALSE]), c("group", by_cell))
+  cells <- cbind(cells, lambda_table[match(cell_keys, lambda_keys), c("lambda", "lambda_reason", "lambda_trimmed")])
 
   if (!is.null(outcome)) {
     cells$estimate <- cells$lambda * cells$estimate_online +

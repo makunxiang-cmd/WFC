@@ -289,8 +289,8 @@ test_that("wf_blend computes group-level data-driven lambda and trims two-source
     outcome = rep(0, 12)
   )
 
-  out <- expect_warning(
-    wf_blend(
+  expect_warning(
+    out <- wf_blend(
       online,
       offline,
       by_cell = "cell",
