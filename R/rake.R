@@ -45,7 +45,7 @@
   n <- nrow(rows_chr)
   D <- ncol(rows_chr)
   base_w <- total / n
-  rel <- if (is.null(init)) rep(1, n) else init / mean(init)
+  rel <- if (is.null(init) || mean(init) == 0) rep(1, n) else init / mean(init)
   pid <- integer(0)
   vals <- vector("list", D)
   w0 <- numeric(0)
@@ -153,8 +153,8 @@ wf_rake <- function(sample, target, id = NULL,
                "wf_error_schema", list(init_weight = init_weight))
     }
     iw <- as.numeric(sample[[init_weight]])
-    if (any(!is.finite(iw)) || any(iw <= 0)) {
-      wf_abort("init_weight must be positive and finite.",
+    if (any(!is.finite(iw)) || any(iw < 0)) {
+      wf_abort("init_weight must be non-negative and finite.",
                "wf_error_input", list(init_weight = init_weight))
     }
   }
