@@ -176,4 +176,4 @@ wf_diagnose(weights_manual)
 
 ## 许可证
 
-基于 [MIT 许可证](LICENSE) 发布。© 2026 makunxiang-cmd 与 weightflow 贡献者。
+基于 [MIT 许可证](LICENSE.md) 发布。© 2026 makunxiang-cmd 与 weightflow 贡献者。

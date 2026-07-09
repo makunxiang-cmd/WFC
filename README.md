@@ -189,5 +189,5 @@ request. Repository conventions for automated agents are documented in
 
 ## License
 
-Released under the [MIT License](LICENSE). © 2026 makunxiang-cmd and weightflow
+Released under the [MIT License](LICENSE.md). © 2026 makunxiang-cmd and weightflow
 contributors.
