@@ -68,3 +68,21 @@ test_that("wf_poststrat can flag or reject empty cells", {
   expect_lt(sum(flagged$data$weight), fixture$target$groups$A$total)
   expect_gt(flagged$log$total_dev, 0)
 })
+
+test_that("wf_diagnose supports poststrat weights", {
+  fixture <- make_poststrat_fixture()
+
+  weights <- wf_poststrat(
+    fixture$sample,
+    fixture$target,
+    min_cell = 1,
+    ladder = fixture$ladder,
+    id = "id"
+  )
+  diag <- wf_diagnose(weights, target = fixture$target)
+
+  expect_s3_class(diag, "wf_diagnostics")
+  expect_true(all(c("ess", "deff", "verdict") %in% names(diag$table)))
+  expect_true(all(diag$table$converged))
+  expect_false("margin_maxerr" %in% names(diag$table))
+})

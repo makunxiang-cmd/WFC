@@ -37,3 +37,42 @@ precheck
 weights <- wf_rake(weightflow_example$sample, target, id = "id")
 wf_diagnose(weights, target = target)
 ```
+
+## Post-Stratification Example
+
+Post-stratification uses joint population cells instead of marginal totals. Build
+the target with `keep_joint = TRUE`, declare a reviewable collapse ladder, then
+plan and execute the cell calibration.
+
+```r
+target_joint <- wf_target_population(
+  pop = weightflow_example$population,
+  key_map = c(gender = "gender", age = "age"),
+  count = "count",
+  dims = dims,
+  by = "province",
+  keep_joint = TRUE
+)
+
+ladder <- wf_collapse_ladder(
+  dims,
+  level1 = list(age = c(young = "all", old = "all"))
+)
+
+plan <- wf_plan_poststrat(
+  weightflow_example$sample,
+  target_joint,
+  min_cell = 2,
+  ladder = ladder
+)
+plan
+
+post <- wf_poststrat(
+  weightflow_example$sample,
+  target_joint,
+  min_cell = 2,
+  ladder = ladder,
+  id = "id"
+)
+wf_diagnose(post)
+```

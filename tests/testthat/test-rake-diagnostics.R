@@ -40,3 +40,13 @@ test_that("wf_diagnose reports diagnostics and margin error", {
   expect_true(all(c("ess", "deff", "verdict", "margin_maxerr") %in% names(diag$table)))
   expect_true(all(diag$table$margin_maxerr <= 1e-4))
 })
+
+test_that("raking print and diagnose remain compatible with poststrat changes", {
+  fixture <- make_weightflow_fixture()
+  weights <- wf_rake(fixture$sample, fixture$target, id = "id", tol = 1e-8)
+
+  expect_output(print(weights), "<wf_weights>")
+  diag <- wf_diagnose(weights, target = fixture$target)
+  expect_true(all(c("iterations", "converged", "trimmed") %in% names(diag$table)))
+  expect_true(all(diag$table$converged))
+})
