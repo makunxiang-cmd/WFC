@@ -13,7 +13,8 @@ wf_target_population(
   by_key = NULL,
   scale = c("population", "sample", "custom"),
   sample = NULL,
-  totals = NULL
+  totals = NULL,
+  keep_joint = FALSE
 )
 }
 \arguments{
@@ -34,6 +35,8 @@ wf_target_population(
 \item{sample}{Required when \code{scale = "sample"}.}
 
 \item{totals}{Required when \code{scale = "custom"}.}
+
+\item{keep_joint}{Whether to retain per-group joint population cells.}
 }
 \value{
 A \code{wf_target} object.

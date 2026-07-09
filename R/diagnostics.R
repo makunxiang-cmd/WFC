@@ -28,9 +28,19 @@ wf_diagnose <- function(w, target = NULL, sample = NULL,
     )
   })
   tab <- do.call(rbind, out)
-  tab <- merge(tab, w$log[, c("group", "iterations", "converged", "trimmed")], by = "group")
+  log_cols <- intersect(c("group", "iterations", "converged", "trimmed"), names(w$log))
+  tab <- merge(tab, w$log[, log_cols, drop = FALSE], by = "group", all.x = TRUE)
+  if (!"iterations" %in% names(tab)) {
+    tab$iterations <- NA_integer_
+  }
+  if (!"converged" %in% names(tab)) {
+    tab$converged <- TRUE
+  }
+  if (!"trimmed" %in% names(tab)) {
+    tab$trimmed <- 0L
+  }
 
-  if (!is.null(target)) {
+  if (!is.null(target) && !is.null(w$achieved)) {
     merr <- vapply(tab$group, function(g) {
       e <- 0
       for (d in target$dims) {
