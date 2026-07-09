@@ -29,6 +29,7 @@ make_blend_weights <- function(source = "online",
 }
 
 test_that("wf_blend is exported", {
+  expect_true("wf_blend" %in% getNamespaceExports("weightflow"))
   expect_true(is.function(wf_blend))
 })
 
