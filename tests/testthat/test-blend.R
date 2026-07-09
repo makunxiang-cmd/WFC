@@ -116,3 +116,73 @@ test_that("wf_blend validates weights, outcome, lambda, level, and trim settings
     class = "wf_error_input"
   )
 })
+
+test_that("wf_blend computes source estimates before fusing", {
+  online <- make_blend_weights(
+    "online",
+    group = c("A", "A"),
+    cell = c("urban", "urban"),
+    weight = c(100, 100),
+    outcome = c(1, 0)
+  )
+  offline <- make_blend_weights(
+    "offline",
+    group = c("A", "A"),
+    cell = c("urban", "urban"),
+    weight = c(1, 1),
+    outcome = c(0, 0)
+  )
+
+  out <- wf_blend(
+    online,
+    offline,
+    by_cell = "cell",
+    outcome = "outcome",
+    lambda = "fixed",
+    lambda_fixed = 0.5,
+    sensitivity = FALSE
+  )
+
+  stacked_weight <- c(online$data$weight, offline$data$weight)
+  stacked_outcome <- c(online$data$outcome, offline$data$outcome)
+  stacked <- sum(stacked_weight * stacked_outcome) / sum(stacked_weight)
+
+  expect_s3_class(out, "wf_blend_result")
+  expect_equal(out$estimates$estimate_online, 0.5, tolerance = 1e-10)
+  expect_equal(out$estimates$estimate_offline, 0, tolerance = 1e-10)
+  expect_equal(out$estimates$lambda, 0.5, tolerance = 1e-10)
+  expect_equal(out$estimates$estimate, 0.25, tolerance = 1e-10)
+  expect_false(isTRUE(all.equal(out$estimates$estimate, stacked)))
+})
+
+test_that("wf_blend uses effective sample size for neff lambda", {
+  online <- make_blend_weights(
+    "online",
+    group = c("A", "A", "A"),
+    cell = c("urban", "urban", "urban"),
+    weight = c(1, 1, 1),
+    outcome = c(1, 1, 0)
+  )
+  offline <- make_blend_weights(
+    "offline",
+    group = c("A", "A"),
+    cell = c("urban", "urban"),
+    weight = c(2, 2),
+    outcome = c(0, 0)
+  )
+
+  out <- wf_blend(
+    online,
+    offline,
+    by_cell = "cell",
+    outcome = "outcome",
+    lambda = "neff",
+    trim_lambda = c(0, 1),
+    sensitivity = FALSE
+  )
+
+  expect_equal(out$estimates$neff_online, 3, tolerance = 1e-10)
+  expect_equal(out$estimates$neff_offline, 2, tolerance = 1e-10)
+  expect_equal(out$estimates$lambda, 3 / 5, tolerance = 1e-10)
+  expect_equal(out$estimates$estimate, (3 / 5) * (2 / 3), tolerance = 1e-10)
+})
